@@ -1,0 +1,35 @@
+# =============================================================================
+# Personal Knowledge-Base MCP Server — Python dependencies
+# =============================================================================
+# Pin major.minor versions so the team installs compatible packages.
+# Update pins intentionally; don't blindly bump without testing.
+# =============================================================================
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1          # ASGI server with websocket + reload support
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+pydantic==2.10.3                   # Data validation (FastAPI dependency)
+pydantic-settings==2.6.1           # Settings management via env vars / .env file
+python-dotenv==1.0.1               # Load .env into environment
+
+# ── MCP layer ─────────────────────────────────────────────────────────────────
+fastmcp==2.3.4                     # FastMCP server framework (Phase 2+)
+
+# ── Authentication ────────────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0   # JWT encoding / decoding
+passlib[bcrypt]==1.7.4             # Password hashing
+
+# ── File upload / HTTP ────────────────────────────────────────────────────────
+python-multipart==0.0.20           # Required for FastAPI file uploads
+
+# ── Vector database client ────────────────────────────────────────────────────
+qdrant-client==1.12.1              # Qdrant Python SDK (Phase 2+)
+
+# ── Document parsing ──────────────────────────────────────────────────────────
+pypdf==5.1.0                       # PDF text extraction (Phase 2+)
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest==8.3.4
+httpx==0.28.1                      # Async-capable HTTP client used by TestClient
