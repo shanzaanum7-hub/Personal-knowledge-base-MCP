@@ -12,7 +12,7 @@ uvicorn[standard]==0.32.1          # ASGI server with websocket + reload support
 # ── Configuration ─────────────────────────────────────────────────────────────
 pydantic==2.10.3                   # Data validation (FastAPI dependency)
 pydantic-settings==2.6.1           # Settings management via env vars / .env file
-python-dotenv==1.0.1               # Load .env into environment
+python-dotenv==1.1.0               # Load .env into environment
 
 # ── MCP layer ─────────────────────────────────────────────────────────────────
 fastmcp==2.3.4                     # FastMCP server framework (Phase 2+)
@@ -33,3 +33,5 @@ pypdf==5.1.0                       # PDF text extraction (Phase 2+)
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.4
 httpx==0.28.1                      # Async-capable HTTP client used by TestClient
+
+openai==1.59.6 
