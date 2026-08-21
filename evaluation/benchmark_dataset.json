@@ -1,0 +1,3 @@
+[
+  {"query": "replace with a representative question", "expected_documents": ["doc-001"]}
+]
