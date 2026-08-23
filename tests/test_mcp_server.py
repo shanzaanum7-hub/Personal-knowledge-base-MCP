@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastmcp import Client
 
@@ -63,8 +65,6 @@ async def test_search_notes_tool_returns_results(monkeypatch):
 
     assert hasattr(content, "text")
 
-    import json
-
     data = json.loads(content.text)
 
     assert data["results"][0]["score"] == 0.92
@@ -77,3 +77,73 @@ async def test_search_notes_tool_returns_results(monkeypatch):
     assert data["results"][0]["chunk_id"] == 2
     assert data["results"][0]["doc_id"] == "doc-123"
     assert data["message"] is None
+
+
+@pytest.mark.anyio
+async def test_search_notes_tool_returns_validation_error(monkeypatch):
+    class FakeRetrievalService:
+        def search_notes(self, query: str, user_id: str, top_k: int = 10):
+            raise server.RetrievalValidationError(
+                "query must be a non-empty string"
+            )
+
+    monkeypatch.setattr(
+        server,
+        "_retrieval_service",
+        FakeRetrievalService(),
+    )
+
+    async with Client(server.mcp) as client:
+        result = await client.call_tool(
+            "search_notes",
+            {
+                "query": "",
+                "user_id": "user-123",
+                "top_k": 5,
+            },
+        )
+
+    assert len(result) == 1
+
+    content = result[0]
+
+    assert hasattr(content, "text")
+
+    data = json.loads(content.text)
+
+    assert data["error"] == "validation_error"
+    assert data["message"] == "query must be a non-empty string"
+
+
+@pytest.mark.anyio
+async def test_search_notes_tool_returns_dependency_error(monkeypatch):
+    class FakeRetrievalService:
+        def search_notes(self, query: str, user_id: str, top_k: int = 10):
+            raise server.RetrievalDependencyError("Qdrant unavailable")
+
+    monkeypatch.setattr(
+        server,
+        "_retrieval_service",
+        FakeRetrievalService(),
+    )
+
+    async with Client(server.mcp) as client:
+        result = await client.call_tool(
+            "search_notes",
+            {
+                "query": "CPU Scheduling",
+                "user_id": "user-123",
+                "top_k": 5,
+            },
+        )
+
+    assert len(result) == 1
+
+    content = result[0]
+
+    assert hasattr(content, "text")
+
+    data = json.loads(content.text)
+
+    assert data["error"] == "dependency_error"
+    assert "temporarily unavailable" in data["message"]
