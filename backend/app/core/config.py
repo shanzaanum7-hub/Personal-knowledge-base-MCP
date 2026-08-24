@@ -1,17 +1,20 @@
 """
 Application configuration.
 
-All settings are read from environment variables (or a .env file via python-dotenv).
-Never hardcode secrets here — use .env.example to document required variables.
+All settings are read from environment variables or a .env file.
+
+Secrets such as API keys and JWT secrets must be stored in .env
+and must never be hardcoded in the source code.
 """
 
 from functools import lru_cache
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Central settings object populated from environment variables."""
+    """Central application settings."""
 
     # ------------------------------------------------------------------ #
     # Application
@@ -20,32 +23,43 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # ------------------------------------------------------------------ #
-    # CORS — comma-separated allowed origins for the FastAPI backend
+    # CORS
     # ------------------------------------------------------------------ #
     frontend_origin: str = "http://localhost:3000"
 
     # ------------------------------------------------------------------ #
-    # Qdrant (vector database) — not wired up in Phase 1
+    # Qdrant
     # ------------------------------------------------------------------ #
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
+    qdrant_collection: str = "study_notes"
 
     # ------------------------------------------------------------------ #
-    # Embeddings — provider and model are kept configurable so the
-    # retrieval logic never has to change when swapping providers.
+    # Embeddings
     # ------------------------------------------------------------------ #
-    embedding_provider: str = "openai"   # e.g. "openai" | "huggingface" | "cohere"
+    embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
+    local_embedding_model: str = "all-MiniLM-L6-v2"
+
+    # OpenAI API key
+    openai_api_key: str = ""
 
     # ------------------------------------------------------------------ #
     # Authentication
     # ------------------------------------------------------------------ #
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = Field(default=60, gt=0)
-    # JSON object: {"username": {"user_id": "...", "password_hash": "..."}}
+    access_token_expire_minutes: int = Field(
+        default=60,
+        gt=0,
+    )
+
+    # JSON object containing server-side users
     auth_users_json: str = "{}"
 
+    # ------------------------------------------------------------------ #
+    # Environment configuration
+    # ------------------------------------------------------------------ #
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -56,5 +70,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached Settings instance (loaded once per process)."""
+    """Return a cached Settings instance."""
+
     return Settings()

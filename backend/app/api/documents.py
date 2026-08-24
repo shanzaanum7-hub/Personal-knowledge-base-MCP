@@ -191,3 +191,62 @@ def list_documents(
                 "Please try again later."
             ),
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# DELETE /documents/{doc_id}
+# ---------------------------------------------------------------------------
+
+@router.delete(
+    "/{doc_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete a document",
+    responses={
+        200: {
+            "description": "Document deleted successfully."
+        },
+        401: {
+            "description": "Missing or invalid authentication token."
+        },
+        404: {
+            "description": "Document not found or does not belong to the user."
+        },
+        500: {
+            "description": "Internal error while deleting document."
+        },
+    },
+)
+def delete_document(
+    doc_id: str,
+    user_id: CurrentUserId,
+    service: DocumentService = Depends(_get_document_service),
+) -> dict[str, str]:
+    """Delete all chunks for a document belonging to the authenticated user.
+
+    The user_id comes exclusively from the JWT token, ensuring users cannot
+    delete documents belonging to other users.
+    """
+    try:
+        deleted = service.delete_document(
+            doc_id=doc_id,
+            user_id=user_id,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                f"An internal error occurred while deleting document '{doc_id}'. "
+                "Please try again later."
+            ),
+        ) from exc
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{doc_id}' not found.",
+        )
+
+    return {
+        "message": f"Document '{doc_id}' deleted successfully.",
+        "doc_id": doc_id,
+    }
