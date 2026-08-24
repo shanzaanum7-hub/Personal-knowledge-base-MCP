@@ -78,3 +78,28 @@ def test_inconsistent_vector_dimensions_are_rejected():
 
     with pytest.raises(EmbeddingProviderError, match="inconsistent dimensions"):
         service(client).embed_texts(["first", "second"])
+
+
+class FakeLocalModel:
+    def __init__(self, vectors=None, error=None):
+        self.vectors = vectors or [[0.1, 0.2, 0.3]]
+        self.error = error
+        self.encode_calls = []
+
+    def encode(self, texts, convert_to_numpy=True):
+        self.encode_calls.append(texts)
+        if self.error:
+            raise self.error
+        import numpy as np
+        return np.array(self.vectors)
+
+
+def test_local_provider_embed_text():
+    local_model = FakeLocalModel([[0.4, 0.5, 0.6]])
+    settings = Settings(embedding_provider="local", local_embedding_model="all-MiniLM-L6-v2")
+    srv = EmbeddingService(settings=settings, client=local_model)
+
+    result = srv.embed_text("hello local")
+
+    assert result == [0.4, 0.5, 0.6]
+    assert local_model.encode_calls == [["hello local"]]

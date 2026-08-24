@@ -77,9 +77,12 @@ class FakeDocumentService:
         self.list_result: list[DocumentMeta] | Exception = [
             DocumentMeta(doc_id="doc_test", filename="notes.txt"),
         ]
+        self.delete_result: bool | Exception = True
         # Track which user_id was used — lets us assert isolation
         self.last_upload_user_id: str | None = None
         self.last_list_user_id: str | None = None
+        self.last_delete_user_id: str | None = None
+        self.last_delete_doc_id: str | None = None
 
     async def ingest_upload(self, file: Any, user_id: str) -> UploadResponse:
         self.last_upload_user_id = user_id
@@ -92,6 +95,13 @@ class FakeDocumentService:
         if isinstance(self.list_result, Exception):
             raise self.list_result
         return self.list_result
+
+    def delete_document(self, doc_id: str, user_id: str) -> bool:
+        self.last_delete_user_id = user_id
+        self.last_delete_doc_id = doc_id
+        if isinstance(self.delete_result, Exception):
+            raise self.delete_result
+        return self.delete_result
 
 
 class FakeSearchService:
@@ -651,6 +661,7 @@ class TestAuthEndpoint:
         for method, url, kwargs in [
             ("get", "/documents", {}),
             ("post", "/documents/upload", {"files": {"file": ("f.txt", b"x", "text/plain")}}),
+            ("delete", "/documents/doc_test", {}),
             ("post", "/search", {"json": {"query": "q", "top_k": 5}}),
         ]:
             resp = getattr(client, method)(url, headers=bad_headers, **kwargs)
@@ -663,7 +674,59 @@ class TestAuthEndpoint:
         for method, url, kwargs in [
             ("get", "/documents", {}),
             ("post", "/documents/upload", {"files": {"file": ("f.txt", b"x", "text/plain")}}),
+            ("delete", "/documents/doc_test", {}),
             ("post", "/search", {"json": {"query": "q", "top_k": 5}}),
         ]:
             resp = getattr(client, method)(url, **kwargs)
             assert resp.status_code == 401, f"{method.upper()} {url} should return 401"
+
+
+# ===========================================================================
+# DELETE /documents/{doc_id}
+# ===========================================================================
+
+class TestDeleteDocument:
+
+    def test_delete_returns_200_on_success(
+        self, client: TestClient, fake_doc_service: FakeDocumentService
+    ) -> None:
+        """Successful deletion returns 200 and document ID."""
+        response = client.delete("/documents/doc_test", headers=auth("user_test"))
+        assert response.status_code == 200
+        assert response.json()["doc_id"] == "doc_test"
+        assert fake_doc_service.last_delete_user_id == "user_test"
+        assert fake_doc_service.last_delete_doc_id == "doc_test"
+
+    def test_delete_non_existent_document_returns_404(
+        self, client: TestClient, fake_doc_service: FakeDocumentService
+    ) -> None:
+        """Deleting a non-existent document returns 404."""
+        fake_doc_service.delete_result = False
+        response = client.delete("/documents/non_existent", headers=auth("user_test"))
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    def test_delete_requires_authentication(
+        self, client: TestClient
+    ) -> None:
+        """DELETE requires authentication."""
+        response = client.delete("/documents/doc_test")
+        assert response.status_code == 401
+
+    def test_delete_user_isolation(
+        self, client: TestClient, fake_doc_service: FakeDocumentService
+    ) -> None:
+        """User ID comes exclusively from JWT token."""
+        client.delete("/documents/doc_test", headers=auth("user_alice"))
+        assert fake_doc_service.last_delete_user_id == "user_alice"
+
+        client.delete("/documents/doc_test", headers=auth("user_bob"))
+        assert fake_doc_service.last_delete_user_id == "user_bob"
+
+    def test_delete_service_error_returns_500(
+        self, client: TestClient, fake_doc_service: FakeDocumentService
+    ) -> None:
+        """Service RuntimeError returns 500."""
+        fake_doc_service.delete_result = RuntimeError("Storage error")
+        response = client.delete("/documents/doc_test", headers=auth("user_test"))
+        assert response.status_code == 500

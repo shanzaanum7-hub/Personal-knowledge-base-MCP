@@ -3,9 +3,10 @@ Personal Knowledge-Base MCP Server — FastAPI application entry point.
 
 Phase 1: health check and CORS foundation.
 Phase 2: authentication, document upload/listing, and semantic search API.
-MCP server integration is added in a later phase.
+Phase 3: FastMCP server integration.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,13 +16,38 @@ from backend.app.core.config import get_settings
 from backend.app.api.auth import router as auth_router
 from backend.app.api.documents import router as documents_router
 from backend.app.api.search import router as search_router
+from backend.mcp.server import mcp
 
 
 settings = get_settings()
 
 
 # ---------------------------------------------------------------------------
-# Application factory
+# MCP application & lifespan
+# ---------------------------------------------------------------------------
+
+mcp_app = mcp.http_app(path="/")
+
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    """Lifespan context manager for the main FastAPI application.
+
+    Delegates to FastMCP's lifespan context while handling duplicate
+    TestClient context entries during test execution.
+    """
+    try:
+        async with mcp_app.router.lifespan_context(app):
+            yield
+    except RuntimeError as exc:
+        if "can only be called once" in str(exc):
+            yield
+        else:
+            raise
+
+
+# ---------------------------------------------------------------------------
+# FastAPI application
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
@@ -34,6 +60,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=app_lifespan,
 )
 
 
@@ -49,18 +76,13 @@ async def validation_exception_handler(
     """
     Handle FastAPI request validation errors.
 
-    For the document upload endpoint, a missing file/filename is treated
-    as a 400 Bad Request.
-
-    All other validation errors remain 422 Unprocessable Entity.
+    Missing upload files are returned as HTTP 400.
+    Other validation errors remain HTTP 422.
     """
 
     errors = exc.errors()
 
-    # -----------------------------------------------------------------------
-    # Special case: document upload with missing file
-    # -----------------------------------------------------------------------
-
+    # Special handling for document upload
     if request.url.path == "/documents/upload":
         for error in errors:
             location = error.get("loc", ())
@@ -73,10 +95,7 @@ async def validation_exception_handler(
                     },
                 )
 
-    # -----------------------------------------------------------------------
     # Normal validation errors
-    # -----------------------------------------------------------------------
-
     safe_errors = []
 
     for error in errors:
@@ -98,15 +117,21 @@ async def validation_exception_handler(
 
 # ---------------------------------------------------------------------------
 # CORS
-#
-# Allow the React/Next.js frontend (default: localhost:3000) to talk to the
-# API during local development. Adjust FRONTEND_ORIGIN in .env for staging/prod.
 # ---------------------------------------------------------------------------
 
 allowed_origins = [
     origin.strip()
     for origin in settings.frontend_origin.split(",")
+    if origin.strip()
 ]
+
+# Allow common local dev origins in addition to configured FRONTEND_ORIGIN.
+# This ensures static-server setups like http://127.0.0.1:5500 and
+# http://localhost:5500 are accepted during local demos without changing
+# production configuration.
+for _dev_origin in ("http://127.0.0.1:5500", "http://localhost:5500"):
+    if _dev_origin not in allowed_origins:
+        allowed_origins.append(_dev_origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,12 +143,12 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# REST API routes
 # ---------------------------------------------------------------------------
 
-app.include_router(auth_router)        # /auth/login
-app.include_router(documents_router)   # /documents/upload, /documents
-app.include_router(search_router)      # /search
+app.include_router(auth_router)
+app.include_router(documents_router)
+app.include_router(search_router)
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +160,13 @@ async def health_check() -> dict:
     """
     Health check endpoint.
 
-    Returns a simple status payload so load balancers and CI pipelines
-    can verify the service is alive.
+    Used by local development, CI, and deployment health checks.
     """
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# MCP server
+# ---------------------------------------------------------------------------
+
+app.mount("/mcp", mcp_app)

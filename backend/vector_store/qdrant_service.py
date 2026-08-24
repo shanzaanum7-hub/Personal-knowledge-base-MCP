@@ -60,13 +60,15 @@ class QdrantService:
         self,
         settings: Settings | None = None,
         client: QdrantClientProtocol | None = None,
-        collection_name: str = "knowledge_base",
+        collection_name: str | None = None,
         vector_size: int | None = None,
     ) -> None:
-        if not isinstance(collection_name, str) or not collection_name.strip():
-            raise VectorStoreValidationError("collection_name must not be empty")
         self.settings = settings or get_settings()
-        self.collection_name = collection_name
+        self.collection_name = (
+            collection_name if collection_name is not None else self.settings.qdrant_collection
+        )
+        if not isinstance(self.collection_name, str) or not self.collection_name.strip():
+            raise VectorStoreValidationError("collection_name must not be empty")
         self._vector_size = self._validate_dimension(vector_size)
         self._client = client
 
@@ -160,10 +162,93 @@ class QdrantService:
                 with_payload=True,
             )
         except Exception as exc:
+            # If Qdrant is unreachable (common in local dev), return no
+            # candidates instead of failing the whole retrieval service.
+            # Keep raising for non-connection errors by checking for
+            # common network/connectivity indicators in the exception.
+            msg = str(exc).lower()
+            connection_indicators = (
+                "getaddrinfo failed",
+                "connectionrefusederror",
+                "connecterror",
+                "failed to establish a new connection",
+            )
+            if any(ind in msg for ind in connection_indicators):
+                return []
             raise VectorStoreConnectionError(
                 f"Could not search Qdrant collection '{self.collection_name}': {exc}"
             ) from exc
         return [self._to_search_result(point) for point in points]
+
+    def scroll(
+        self,
+        collection_name: str | None = None,
+        scroll_filter: Any = None,
+        limit: int = 100,
+        with_payload: bool = True,
+    ) -> tuple[list, Any]:
+        """Scroll points in the collection with optional payload filtering."""
+        target_collection = collection_name or self.collection_name
+        try:
+            return self._get_client().scroll(
+                collection_name=target_collection,
+                scroll_filter=scroll_filter,
+                limit=limit,
+                with_payload=with_payload,
+            )
+        except Exception as exc:
+            raise VectorStoreConnectionError(
+                f"Could not scroll points in '{target_collection}': {exc}"
+            ) from exc
+
+    def delete_document_points(
+        self,
+        user_id: str,
+        doc_id: str,
+    ) -> bool:
+        """Delete all points belonging to a specific user_id and doc_id.
+
+        Returns True if points were found and deleted, False if none matched.
+        """
+        self._validate_user_id(user_id)
+        if not isinstance(doc_id, str) or not doc_id.strip():
+            raise VectorStoreValidationError("doc_id must be a non-empty string")
+
+        doc_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="user_id",
+                    match=models.MatchValue(value=user_id),
+                ),
+                models.FieldCondition(
+                    key="doc_id",
+                    match=models.MatchValue(value=doc_id),
+                ),
+            ]
+        )
+
+        try:
+            existing_points, _ = self._get_client().scroll(
+                collection_name=self.collection_name,
+                scroll_filter=doc_filter,
+                limit=1,
+                with_payload=False,
+            )
+            if not existing_points:
+                return False
+
+            self._get_client().delete(
+                collection_name=self.collection_name,
+                points_selector=doc_filter,
+                wait=True,
+            )
+            return True
+        except VectorStoreError:
+            raise
+        except Exception as exc:
+            raise VectorStoreConnectionError(
+                f"Could not delete document points for '{doc_id}' in '{self.collection_name}': {exc}"
+            ) from exc
 
     def _get_client(self) -> QdrantClientProtocol:
         if self._client is None:

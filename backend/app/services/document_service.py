@@ -44,6 +44,12 @@ class VectorStoreDependency(Protocol):
         with_payload: bool,
     ) -> tuple[list, object | None]: ...
 
+    def delete_document_points(
+        self,
+        user_id: str,
+        doc_id: str,
+    ) -> bool: ...
+
 
 # ---------------------------------------------------------------------------
 # Allowed file types
@@ -117,20 +123,22 @@ class DocumentService:
         self._vector_store = vector_store
         self._settings = settings
 
-    # -- lazy service accessors ---------------------------------------------
+    def _get_settings(self):
+        if self._settings is None:
+            from backend.app.core.config import get_settings
+            self._settings = get_settings()
+        return self._settings
 
     def _get_embedding_service(self) -> EmbeddingDependency:
         if self._embedding_service is None:
             from backend.embeddings.embedding_service import EmbeddingService
-            from backend.app.core.config import get_settings
-            self._embedding_service = EmbeddingService(self._settings or get_settings())
+            self._embedding_service = EmbeddingService(self._get_settings())
         return self._embedding_service
 
     def _get_vector_store(self) -> VectorStoreDependency:
         if self._vector_store is None:
             from backend.vector_store.qdrant_service import QdrantService
-            from backend.app.core.config import get_settings
-            self._vector_store = QdrantService(settings=self._settings or get_settings())
+            self._vector_store = QdrantService(settings=self._get_settings())
         return self._vector_store
 
     # -- public API ---------------------------------------------------------
@@ -262,7 +270,7 @@ class DocumentService:
 
         try:
             points, _ = self._get_vector_store().scroll(
-                collection_name="knowledge_base",
+                collection_name=self._get_settings().qdrant_collection,
                 scroll_filter=user_filter,
                 limit=limit,
                 with_payload=True,
@@ -282,3 +290,16 @@ class DocumentService:
             DocumentMeta(doc_id=did, filename=fn)
             for did, fn in sorted(seen.items())
         ]
+
+    def delete_document(self, doc_id: str, user_id: str) -> bool:
+        """Delete all vectors for doc_id belonging exclusively to user_id.
+
+        Returns True if points were found and deleted, False otherwise.
+        """
+        try:
+            return self._get_vector_store().delete_document_points(
+                user_id=user_id,
+                doc_id=doc_id,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Could not delete document '{doc_id}': {exc}") from exc
