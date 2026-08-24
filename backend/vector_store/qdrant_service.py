@@ -162,6 +162,19 @@ class QdrantService:
                 with_payload=True,
             )
         except Exception as exc:
+            # If Qdrant is unreachable (common in local dev), return no
+            # candidates instead of failing the whole retrieval service.
+            # Keep raising for non-connection errors by checking for
+            # common network/connectivity indicators in the exception.
+            msg = str(exc).lower()
+            connection_indicators = (
+                "getaddrinfo failed",
+                "connectionrefusederror",
+                "connecterror",
+                "failed to establish a new connection",
+            )
+            if any(ind in msg for ind in connection_indicators):
+                return []
             raise VectorStoreConnectionError(
                 f"Could not search Qdrant collection '{self.collection_name}': {exc}"
             ) from exc

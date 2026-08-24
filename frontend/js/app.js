@@ -44,6 +44,16 @@ const loginBtnTxt = $('login-btn-text');
 const loginSpinner= $('login-spinner');
 const loginErr    = $('login-error');
 const loginErrMsg = $('login-error-msg');
+// Register form
+const showRegisterBtn = $('show-register-btn');
+const registerForm = $('register-form');
+const registerUser = $('register-username');
+const registerPass = $('register-password');
+const registerBtn = $('register-btn');
+const registerBtnTxt = $('register-btn-text');
+const registerSpinner = $('register-spinner');
+const registerErr = $('register-error');
+const registerErrMsg = $('register-error-msg');
 
 // Sidebar & nav
 const sidebar         = $('sidebar');
@@ -102,6 +112,9 @@ const deleteCancelBtn   = $('delete-cancel-btn');
 const deleteConfirmBtn  = $('delete-confirm-btn');
 const deleteConfirmTxt  = $('delete-confirm-text');
 const deleteSpinner     = $('delete-spinner');
+// Document modal
+const docModal = $('doc-modal');
+const docModalBody = $('doc-modal-body');
 
 /* ============================================================================
    HELPERS
@@ -281,6 +294,35 @@ function handleLogout() {
   showLoginPage();
 }
 
+async function handleRegister(e) {
+  e && e.preventDefault();
+  hideError(registerErr);
+  const username = registerUser.value.trim();
+  const password = registerPass.value;
+  if (!username || !password) {
+    showError(registerErr, registerErrMsg, 'Username and password are required.');
+    return;
+  }
+
+  registerBtnTxt.textContent = 'Creating...';
+  show(registerSpinner);
+  registerBtn.disabled = true;
+
+  try {
+    const res = await apiRegister(username, password);
+    // Auto-fill login and sign in
+    loginUser.value = username;
+    await apiLogin(username, password);
+    showDashboardPage();
+  } catch (err) {
+    showError(registerErr, registerErrMsg, err.message || 'Registration failed.');
+  } finally {
+    registerBtnTxt.textContent = 'Create account';
+    hide(registerSpinner);
+    registerBtn.disabled = false;
+  }
+}
+
 /* ============================================================================
    DOCUMENT MANAGEMENT
    ============================================================================ */
@@ -391,6 +433,16 @@ function renderDocsList() {
   docsList.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', () => {
       openDeleteModal(btn.dataset.docId, btn.dataset.filename);
+    });
+  });
+
+  // Attach click-to-view on doc cards (excluding delete button)
+  docsList.querySelectorAll('.doc-card').forEach((card) => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-delete')) return;
+      const docId = card.dataset.docId;
+      const filename = card.querySelector('.doc-card-name')?.textContent || '';
+      openDocModal(docId, filename);
     });
   });
 }
@@ -583,6 +635,32 @@ async function performSearch(query) {
   }
 }
 
+/**
+ * View a document by performing a filename-scoped search and showing chunks.
+ * This avoids requiring a dedicated backend document-content endpoint.
+ */
+async function openDocModal(docId, filename) {
+  docModalBody.innerHTML = `<div class="progress-spinner"></div><p>Loading document "${escHtml(filename)}"…</p>`;
+  docModal.classList.remove('hidden');
+  try {
+    const response = await apiSearch(filename, 50);
+    const chunks = (response.results || []).filter((r) => r.doc_id === docId);
+    if (chunks.length === 0) {
+      docModalBody.innerHTML = `<p>No indexed chunks found for this document.</p>`;
+      return;
+    }
+
+    docModalBody.innerHTML = chunks.map((c) => `
+      <div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+        <div style="font-size:0.9rem; color:#9CA3AF;">${escHtml(c.filename)} · ${c.page ? 'Page '+c.page : ''} · Chunk ${c.chunk_id} · ${Math.round(c.score*100)}% relevant</div>
+        <div style="margin-top:6px;">${escHtml(c.text)}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    docModalBody.innerHTML = `<p>Failed to load document: ${escHtml(err.message || 'Unknown error')}</p>`;
+  }
+}
+
 /** Render ranked search result cards. */
 function renderSearchResults(response) {
   const { query, results } = response;
@@ -646,6 +724,12 @@ function handleDashboardSearch() {
 function attachListeners() {
   // --- Login ---
   loginForm.addEventListener('submit', handleLogin);
+  // --- Register ---
+  showRegisterBtn.addEventListener('click', () => {
+    registerForm.classList.toggle('hidden');
+    registerUser.focus();
+  });
+  registerBtn.addEventListener('click', handleRegister);
 
   // --- Logout ---
   logoutBtn.addEventListener('click', handleLogout);

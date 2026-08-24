@@ -125,6 +125,14 @@ allowed_origins = [
     if origin.strip()
 ]
 
+# Allow common local dev origins in addition to configured FRONTEND_ORIGIN.
+# This ensures static-server setups like http://127.0.0.1:5500 and
+# http://localhost:5500 are accepted during local demos without changing
+# production configuration.
+for _dev_origin in ("http://127.0.0.1:5500", "http://localhost:5500"):
+    if _dev_origin not in allowed_origins:
+        allowed_origins.append(_dev_origin)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,

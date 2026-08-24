@@ -62,6 +62,28 @@ async function apiLogin(username, password) {
   return data;
 }
 
+
+/**
+ * Register a new user on the server.
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{username:string,user_id:string}>}
+ */
+async function apiRegister(username, password) {
+  const resp = await fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || `Register failed (${resp.status})`);
+  }
+
+  return resp.json();
+}
+
 /**
  * Upload a document file for ingestion.
  * @param {File} file

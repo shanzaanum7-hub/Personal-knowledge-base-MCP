@@ -77,6 +77,16 @@ class EmbeddingService:
     def _embed(self, texts: list[str]) -> list[Vector]:
         """Generate embeddings using the configured provider."""
         provider = self.settings.embedding_provider.strip().lower()
+        # If OpenAI is selected but no API key is configured, fall back
+        # to the local provider (smallest change to make local dev work).
+        if provider == "openai":
+            try:
+                api_key = self.settings.openai_api_key.strip()
+            except Exception:
+                api_key = ""
+            if not api_key:
+                provider = "local"
+
         if provider in ("local", "huggingface"):
             return self._embed_local(texts)
         return self._embed_openai(texts)
